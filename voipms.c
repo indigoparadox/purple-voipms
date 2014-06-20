@@ -221,15 +221,13 @@ static void messages_foreach_process(
    JsonObject* message;
    const gchar* id,
       * date;
-   time_t message_time;
-   struct tm* message_timeinfo;
+   struct tm message_timeinfo;
 
-   #if 0
    /* Parse/translate message metadata. */
    message = json_node_get_object( element_node );
    id = json_object_get_string_member( message, "id" );
    date = json_object_get_string_member( message, "date" );
-   message_timeinfo = getdate( date );
+   strptime( date, "%Y-%m-%d %H:%M:%S", &message_timeinfo );
 
    /* Pass the message on to the user. */
    serv_got_im(
@@ -237,9 +235,8 @@ static void messages_foreach_process(
       json_object_get_string_member( message, "contact" ),
       json_object_get_string_member( message, "message" ),
       PURPLE_MESSAGE_RECV,
-      message_time
+      mktime( &message_timeinfo )
    );
-   #endif
 }
 
 static gboolean voipms_messages_timer( PurpleAccount* acct ) {
@@ -258,6 +255,7 @@ static gboolean voipms_messages_timer( PurpleAccount* acct ) {
    const gchar* status;
 
    /* Calculate as wide a range as the API will allow us. */
+   /* TODO: Use glib functions for this? */
    time( &from_rawtime );
    from_rawtime -= VOIPMS_DAY_SECONDS * VOIPMS_MAX_AGE_DAYS;
    from_timeinfo = localtime( &from_rawtime );
