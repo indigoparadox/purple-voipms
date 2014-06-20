@@ -244,6 +244,9 @@ static void messages_foreach_serve( gpointer data, gpointer user_data ) {
    );
 
    /* Delete the message from the server. */
+   if( !purple_account_get_bool( message->account, "delete", TRUE ) ) {
+      goto messages_serve_cleanup;
+   }
 
    /* Build and send the API request. */
    api_args = g_slist_append( api_args, g_strdup( "method=deleteSMS" ) );
@@ -722,14 +725,24 @@ static void voipms_init( PurplePlugin* plugin ) {
       "api_url",                
       VOIPMS_PLUGIN_DEFAULT_API_URL
    );
-   prpl_info.protocol_options = g_list_append( NULL, option );
+   prpl_info.protocol_options =
+      g_list_append( prpl_info.protocol_options, option );
 
    option = purple_account_option_string_new(
       "Account DID",
       "did",                
       ""
    );
-   prpl_info.protocol_options = g_list_append( NULL, option );
+   prpl_info.protocol_options =
+      g_list_append( prpl_info.protocol_options, option );
+
+   option = purple_account_option_bool_new(
+      "Delete Messages on Fetch",
+      "delete",
+      TRUE
+   );
+   prpl_info.protocol_options =
+      g_list_append( prpl_info.protocol_options, option );
  
    purple_debug_info( "voipms", "Starting up...\n" );
 
