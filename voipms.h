@@ -72,12 +72,6 @@ typedef void (*GcFunc)(
    gpointer userdata
 );
 
-struct GcFuncData {
-   GcFunc fn;
-   PurpleConnection *from;
-   gpointer userdata;
-};
-
 struct RequestMemoryStruct {
    char* memory;
    size_t size;
@@ -85,6 +79,25 @@ struct RequestMemoryStruct {
 
 struct VoipMsAccount {
    guint timer;
+};
+
+struct VoipMsMessage {
+   gchar* id;
+   gchar* contact;
+   gchar* message;
+   struct tm timeinfo;
+   PurpleAccount* account;
+};
+
+struct GcFuncData {
+   GcFunc fn;
+   PurpleConnection *from;
+   gpointer userdata;
+};
+
+struct GcFuncDataMessageList {
+   GList* messages;
+   PurpleAccount* account;
 };
 
 #endif /* VOIPMS_H */
