@@ -29,6 +29,11 @@
 #  define PURPLE_PLUGINS
 #endif
 
+#include <stdarg.h>
+#include <string.h>
+#include <time.h>
+#include <glib.h>
+
 #include "accountopt.h"
 #include "blist.h"
 #include "core.h"
@@ -49,10 +54,9 @@
 #define VOIPMS_PLUGIN_ID "prpl-indigoparadox-voipms"
 #define VOIPMS_PLUGIN_VERSION "14.6"
 #define VOIPMS_PLUGIN_WEBSITE ""
+#define VOIPMS_PLUGIN_NAME "VOIP.ms SMS Protocol"
 
 #define VOIPMS_STATUS_ONLINE   "online"
-
-static PurplePlugin *_voipms_protocol = NULL;
 
 typedef void (*GcFunc)(
    PurpleConnection *from,

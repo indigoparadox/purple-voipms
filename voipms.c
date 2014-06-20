@@ -16,6 +16,11 @@
 
 #include "voipms.h"
 
+static void voipms_init( PurplePlugin* );
+static void voipms_destroy( PurplePlugin* );
+
+static PurplePlugin* _voipms_protocol = NULL;
+
 static void call_if_voipms( gpointer data, gpointer userdata ) {
    PurpleConnection* gc = (PurpleConnection*)(data);
    GcFuncData* gcfdata = (GcFuncData*)userdata;
@@ -86,13 +91,13 @@ static void voipms_login( PurpleAccount* acct ) {
  
    purple_connection_update_progress(
       gc,
-      _( "Connecting" ),
+      "Connecting",
       0, /* Which connection step this is. */
       2  /* Total number of steps */
    );
  
    #if 0
-   purple_connection_update_progress(gc, _("Connected"),
+   purple_connection_update_progress(gc, "Connected",
                                      1,   /* which connection step this is */
                                      2);  /* total number of steps */
    #endif
@@ -133,7 +138,7 @@ static int voipms_send_im(
    /* Is the sender blocked by the recipient's privacy settings? */
    if( to_acct && !purple_privacy_check( to_acct, gc->account->username ) ) {
       msg = g_strdup_printf(
-         _( "Your message was blocked by %s's privacy settings." ), who
+         "Your message was blocked by %s's privacy settings.", who
       );
       purple_debug_info(
          "voipms",
@@ -158,7 +163,7 @@ static GList* voipms_status_types( PurpleAccount* acct ) {
    type = purple_status_type_new_with_attrs(
       PURPLE_STATUS_AVAILABLE,
       VOIPMS_STATUS_ONLINE, NULL, TRUE, TRUE, FALSE,
-      "message", _( "Message" ), purple_value_new( PURPLE_TYPE_STRING ),
+      "message", "Message", purple_value_new( PURPLE_TYPE_STRING ),
       NULL
    );
    types = g_list_prepend( types, type );
@@ -166,8 +171,8 @@ static GList* voipms_status_types( PurpleAccount* acct ) {
    return g_list_reverse( types );
 }
 
-static void voipms_destroy( PurplePlugin *plugin ) {
-   purple_debug_info( "voipms", "Shutting down.\n" );
+static const char* voipms_list_icon( PurpleAccount* acct, PurpleBuddy* buddy ) {
+   return "null";
 }
 
 static PurplePluginProtocolInfo prpl_info = {
@@ -183,7 +188,7 @@ static PurplePluginProtocolInfo prpl_info = {
        10000,                          /* max_filesize */
        PURPLE_ICON_SCALE_DISPLAY,      /* scale_rules */
    },
-   NULL,                               /* list_icon */
+   voipms_list_icon,                   /* list_icon */
    NULL,                               /* list_emblem */
    NULL,                               /* status_text */
    NULL,                               /* tooltip_text */
@@ -265,10 +270,10 @@ static PurplePluginInfo info = {
    NULL,                                                    /* dependencies */
    PURPLE_PRIORITY_DEFAULT,                                 /* priority */
    VOIPMS_PLUGIN_ID,                                        /* id */
-   "VOIP.ms SMS Plugin",                                    /* name */
+   VOIPMS_PLUGIN_NAME,                                      /* name */
    VOIPMS_PLUGIN_ID,                                        /* version */
-   "VOIP.ms SMS Plugin",                               /* summary */
-   "VOIP.ms SMS Plugin",                               /* description */
+   VOIPMS_PLUGIN_NAME,                                      /* summary */
+   VOIPMS_PLUGIN_NAME,                                      /* description */
    NULL,                                                    /* author */
    VOIPMS_PLUGIN_WEBSITE,                                   /* homepage */
    NULL,                                                    /* load */
@@ -283,6 +288,37 @@ static PurplePluginInfo info = {
    NULL,
    NULL,
 };
+
+static void voipms_init( PurplePlugin* plugin ) {
+   //PurpleAccountUserSplit* split;
+   PurpleAccountOption* option;
+   
+   #if 0
+   /* See accountopt.h for information about user splits and protocol options.
+    */
+   split = purple_account_user_split_new(
+      "Example user split",  /* text shown to user */
+      "default",                /* default value */
+      '@');                     /* field separator */
+   #endif
+
+   option = purple_account_option_string_new(
+      "REST GET API URL",
+      "api_url",                
+      "https://voip.ms/api/v1/rest.php"
+   );
+
+   purple_debug_info( "voipms", "Starting up...\n" );
+
+   //prpl_info.user_splits = g_list_append(NULL, split);
+   prpl_info.protocol_options = g_list_append( NULL, option );
+
+   _voipms_protocol = plugin;
+}
+
+static void voipms_destroy( PurplePlugin* plugin ) {
+   purple_debug_info( "voipms", "Shutting down.\n" );
+}
 
 PURPLE_INIT_PLUGIN( null, voipms_init, info );
 
