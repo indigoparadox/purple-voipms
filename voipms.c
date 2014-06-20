@@ -113,27 +113,21 @@ static size_t voipms_api_request_write_body_callback(
 }
 
 static CURLcode voipms_api_request(
-   char** options, PurpleAccount* account, char** buffer_ptr, char* error_buffer
+   const char* url, PurpleAccount* account, char** buffer_ptr,
+   char* error_buffer
 ) {
    CURL* curl = NULL;
    CURLcode res;
-   const char* api_url;
    struct RequestMemoryStruct chunk;
 
    /* Setup some buffers and stuff. */
    chunk.memory = malloc( 1 );
    chunk.size = 0;
 
-   api_url = purple_account_get_string(
-      account,
-      "api_url",
-      VOIPMS_PLUGIN_DEFAULT_API_URL
-   );
-
    curl = curl_easy_init();
 
    /* Setup the request. */
-   curl_easy_setopt( curl, CURLOPT_URL, api_url );
+   curl_easy_setopt( curl, CURLOPT_URL, url );
    curl_easy_setopt(
       curl, CURLOPT_WRITEFUNCTION, voipms_api_request_write_body_callback
    );
@@ -202,7 +196,9 @@ static int voipms_send_im(
    PurpleMessageFlags flags
 ) {
    const char *from_username = gc->account->username,
-      * api_url;
+      * api_url,
+      * api_who = NULL,
+      * api_message = NULL;
    PurpleMessageFlags receive_flags = 
       ((flags & ~PURPLE_MESSAGE_SEND) | PURPLE_MESSAGE_RECV);
    PurpleAccount* to_acct = purple_accounts_find( who, VOIPMS_PLUGIN_ID );
@@ -211,10 +207,7 @@ static int voipms_send_im(
    int retval = 1;
    char* msg,
       * buffer_ptr = NULL,
-      curl_error_str[CURL_ERROR_SIZE],
-      * api_options[] = {
-         "method=sendSMS"
-      };
+      curl_error_str[CURL_ERROR_SIZE];
 
    purple_debug_info(
       "voipms",
@@ -239,8 +232,22 @@ static int voipms_send_im(
       goto send_im_cleanup;
    }
 
+   api_who = purple_url_encode( who );
+   api_message = purple_url_encode( message );
+   api_url = g_strdup_printf(
+      "%s?method=sendSMS&did=%s&dst=%s&message=%s",
+      purple_account_get_string(
+         gc->account,
+         "api_url",
+         VOIPMS_PLUGIN_DEFAULT_API_URL
+      ),
+      purple_account_get_string( gc->account, "did", "" ),
+      api_who,
+      api_message
+   );
+
    res = voipms_api_request(
-      api_options,
+      api_url,
       gc->account,
       &buffer_ptr,
       curl_error_str
@@ -276,6 +283,20 @@ send_im_cleanup:
    if( NULL != buffer_ptr ) {
       free( buffer_ptr );
    }
+
+   #if 0
+   if( NULL != api_who ) {
+      g_free( api_who );
+   }
+
+   if( NULL != api_message ) {
+      g_free( api_message );
+   }
+
+   if( NULL != api_url ) {
+      g_free( api_url );
+   }
+   #endif
 
    return retval;
 }
