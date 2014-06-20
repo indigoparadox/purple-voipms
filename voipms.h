@@ -60,6 +60,8 @@
 
 #define VOIPMS_STATUS_ONLINE   "online"
 
+#define VOIPMS_ERROR_SIZE CURL_ERROR_SIZE + 255
+
 typedef void (*GcFunc)(
    PurpleConnection *from,
    PurpleConnection *to,
