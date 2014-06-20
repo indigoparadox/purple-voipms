@@ -34,6 +34,7 @@
 #include <time.h>
 #include <glib.h>
 #include <curl/curl.h>
+#include <json-glib/json-glib.h>
 
 #include "accountopt.h"
 #include "blist.h"
