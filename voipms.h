@@ -62,6 +62,9 @@
 #define VOIPMS_STATUS_ONLINE   "online"
 
 #define VOIPMS_ERROR_SIZE CURL_ERROR_SIZE + 255
+#define VOIPMS_DATE_BUFFER_SIZE 20
+#define VOIPMS_MAX_AGE_DAYS 91
+#define VOIPMS_DAY_SECONDS (60 * 60 * 24)
 
 typedef void (*GcFunc)(
    PurpleConnection *from,
@@ -69,15 +72,19 @@ typedef void (*GcFunc)(
    gpointer userdata
 );
 
-typedef struct {
+struct GcFuncData {
    GcFunc fn;
    PurpleConnection *from;
    gpointer userdata;
-} GcFuncData;
+};
 
 struct RequestMemoryStruct {
    char* memory;
    size_t size;
+};
+
+struct VoipMsAccount {
+   guint timer;
 };
 
 #endif /* VOIPMS_H */

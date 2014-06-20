@@ -32,7 +32,7 @@ static PurpleConnection* get_voipms_gc( const char* username ) {
 
 static void call_if_voipms( gpointer data, gpointer userdata ) {
    PurpleConnection* gc = (PurpleConnection*)(data);
-   GcFuncData* gcfdata = (GcFuncData*)userdata;
+   struct GcFuncData* gcfdata = (struct GcFuncData*)userdata;
 
    if( !strcmp( gc->account->protocol_id, VOIPMS_PLUGIN_ID ) ) {
       gcfdata->fn( gcfdata->from, gc, gcfdata->userdata );
@@ -42,7 +42,7 @@ static void call_if_voipms( gpointer data, gpointer userdata ) {
 static void foreach_voipms_gc(
    GcFunc fn, PurpleConnection* from, gpointer userdata
 ) {
-   GcFuncData gcfdata = { fn, from, userdata };
+   struct GcFuncData gcfdata = { fn, from, userdata };
    g_list_foreach(
       purple_connections_get_all(), call_if_voipms, &gcfdata
    );
@@ -166,6 +166,8 @@ JsonParser* voipms_api_request(
       arg_iter = g_slist_next( arg_iter );
    }
 
+   printf( "%s\n", api_url );
+
    /* Setup the request. */
    curl = curl_easy_init();
    curl_easy_setopt( curl, CURLOPT_URL, api_url );
@@ -186,7 +188,9 @@ JsonParser* voipms_api_request(
       /* TODO: Handle me. */
    }
 
+   #if 0
    purple_debug_info( "voipms", "Response from server: %s\n", chunk.memory );
+   #endif
 
    parser = json_parser_new();
    if( !json_parser_load_from_data( parser, chunk.memory, chunk.size, NULL ) ) {
@@ -210,8 +214,121 @@ api_request_cleanup:
    return parser;
 }
 
+static void messages_foreach_process(
+   JsonArray* array, guint index_, JsonNode* element_node, gpointer user_data
+) {
+   PurpleAccount* acct = (PurpleAccount*)user_data;
+   JsonObject* message;
+   const gchar* id,
+      * date;
+   time_t message_time;
+   struct tm* message_timeinfo;
+
+   #if 0
+   /* Parse/translate message metadata. */
+   message = json_node_get_object( element_node );
+   id = json_object_get_string_member( message, "id" );
+   date = json_object_get_string_member( message, "date" );
+   message_timeinfo = getdate( date );
+
+   /* Pass the message on to the user. */
+   serv_got_im(
+      acct->gc,
+      json_object_get_string_member( message, "contact" ),
+      json_object_get_string_member( message, "message" ),
+      PURPLE_MESSAGE_RECV,
+      message_time
+   );
+   #endif
+}
+
+static gboolean voipms_messages_timer( PurpleAccount* acct ) {
+   time_t to_rawtime,
+      from_rawtime;
+   struct tm* to_timeinfo,
+      * from_timeinfo;
+   char curl_error_str[VOIPMS_ERROR_SIZE],
+      from_filter_date[VOIPMS_DATE_BUFFER_SIZE] = { 0 },
+      to_filter_date[VOIPMS_DATE_BUFFER_SIZE] = { 0 };
+   GSList* api_args = NULL;
+   JsonParser* parser = NULL;
+   JsonNode* root = NULL;
+   JsonObject* response = NULL;
+   JsonArray* messages = NULL;
+   const gchar* status;
+
+   /* Calculate as wide a range as the API will allow us. */
+   time( &from_rawtime );
+   from_rawtime -= VOIPMS_DAY_SECONDS * VOIPMS_MAX_AGE_DAYS;
+   from_timeinfo = localtime( &from_rawtime );
+   strftime( from_filter_date, VOIPMS_DATE_BUFFER_SIZE, "%F", from_timeinfo );
+
+   time( &to_rawtime );
+   to_timeinfo = localtime( &to_rawtime );
+   strftime( to_filter_date, VOIPMS_DATE_BUFFER_SIZE, "%F", to_timeinfo );
+
+   /* Build and send the API request. */
+   api_args = g_slist_append( api_args, g_strdup( "method=getSMS" ) );
+   api_args = g_slist_append(
+      api_args,
+      g_strdup_printf( "from=%s", from_filter_date )
+   );
+   api_args = g_slist_append( 
+      api_args,
+      g_strdup_printf(
+         "to=%s", to_filter_date
+      )
+   );
+   api_args = g_slist_append( api_args, g_strdup( "type=1" ) );
+   api_args = g_slist_append(
+      api_args,
+      g_strdup_printf(
+         "did=%s", purple_account_get_string( acct, "did", "" )
+      )
+   );
+
+   parser = voipms_api_request(
+      &api_args,
+      acct,
+      curl_error_str
+   );
+
+   if( NULL == parser ) {
+      goto messages_timer_cleanup;
+   }
+
+   root = json_parser_get_root( parser );
+   response = json_node_get_object( root );
+   status = json_object_get_string_member( response, "status" );
+   if( strcmp( status, "success" ) ) {
+      purple_debug_error( "voipms", "Request status: %s", status );
+      goto messages_timer_cleanup;
+   }
+      
+   messages = json_object_get_array_member( response, "sms" );  
+   json_array_foreach_element(
+      messages, messages_foreach_process, acct
+   );
+
+messages_timer_cleanup:
+
+   g_object_unref( parser );
+
+   g_slist_free_full( api_args, g_free );
+
+   #if 0
+   free( timeinfo );
+   #endif
+
+   return TRUE;
+}
+
 static void voipms_login( PurpleAccount* acct ) {
    PurpleConnection* gc = purple_account_get_connection( acct );
+   struct VoipMsAccount* vmsa;
+
+   vmsa = calloc( 1, sizeof( struct VoipMsAccount ) );
+   acct->gc->proto_data = vmsa;
  
    purple_debug_info( "voipms", "Logging in %s...\n", acct->username );
  
@@ -233,14 +350,24 @@ static void voipms_login( PurpleAccount* acct ) {
    /* Tell purple about everyone on our buddy list who's connected. */
    foreach_voipms_gc( discover_status, gc, NULL );
 
-   /* TODO: Check for offline messages. */
+   /* Start polling for new messages. */
+   vmsa->timer = purple_timeout_add_seconds(
+      5, (GSourceFunc)voipms_messages_timer, acct
+   );
  
    /* Notify other VOIP.ms accounts. */
    foreach_voipms_gc( report_status_change, gc, NULL );
 }
 
 static void voipms_close( PurpleConnection* gc ) {
-   /* Motify other VOIP.ms accounts. */
+   struct VoipMsAccount* vmsa = gc->proto_data;
+
+   /* Stop polling for new messages. */
+   if( vmsa->timer ) {
+      purple_timeout_remove( vmsa->timer );
+   }
+
+   /* Notify other VOIP.ms accounts. */
    foreach_voipms_gc( report_status_change, gc, NULL );
 }
 
