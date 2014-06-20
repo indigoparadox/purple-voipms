@@ -327,6 +327,8 @@ static gboolean voipms_messages_timer( PurpleAccount* acct ) {
       goto messages_timer_cleanup;
    }
       
+   /* Parse the messages and reverse them so that newest come last before we  *
+    * serve them.                                                             */
    messages = json_object_get_array_member( response, "sms" );  
    json_array_foreach_element(
       messages, messages_foreach_process, &message_list
@@ -544,7 +546,7 @@ static GList* voipms_status_types( PurpleAccount* acct ) {
 }
 
 static const char* voipms_list_icon( PurpleAccount* acct, PurpleBuddy* buddy ) {
-   return "null";
+   return "voipms";
 }
 
 static PurplePluginProtocolInfo prpl_info = {
@@ -700,5 +702,5 @@ static void voipms_destroy( PurplePlugin* plugin ) {
    purple_debug_info( "voipms", "Shutting down.\n" );
 }
 
-PURPLE_INIT_PLUGIN( null, voipms_init, info );
+PURPLE_INIT_PLUGIN( voipms, voipms_init, info );
 
