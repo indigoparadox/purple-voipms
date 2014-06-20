@@ -33,6 +33,7 @@
 #include <string.h>
 #include <time.h>
 #include <glib.h>
+#include <curl/curl.h>
 
 #include "accountopt.h"
 #include "blist.h"
@@ -55,6 +56,7 @@
 #define VOIPMS_PLUGIN_VERSION "14.6"
 #define VOIPMS_PLUGIN_WEBSITE ""
 #define VOIPMS_PLUGIN_NAME "VOIP.ms SMS Protocol"
+#define VOIPMS_PLUGIN_DEFAULT_API_URL "https://voip.ms/api/v1/rest.php"
 
 #define VOIPMS_STATUS_ONLINE   "online"
 
