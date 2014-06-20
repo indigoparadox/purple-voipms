@@ -48,7 +48,30 @@
 
 #define VOIPMS_PLUGIN_ID "prpl-indigoparadox-voipms"
 #define VOIPMS_PLUGIN_VERSION "14.6"
+#define VOIPMS_PLUGIN_WEBSITE ""
 
+#define VOIPMS_STATUS_ONLINE   "online"
+
+static PurplePlugin *_voipms_protocol = NULL;
+
+typedef void (*GcFunc)(
+   PurpleConnection *from,
+   PurpleConnection *to,
+   gpointer userdata
+);
+
+typedef struct {
+   GcFunc fn;
+   PurpleConnection *from;
+   gpointer userdata;
+} GcFuncData;
+
+typedef struct {
+   char *from;
+   char *message;
+   time_t mtime;
+   PurpleMessageFlags flags;
+} GOfflineMessage;
 
 #endif /* VOIPMS_H */
 
