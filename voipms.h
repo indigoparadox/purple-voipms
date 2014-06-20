@@ -72,12 +72,10 @@ typedef struct {
    gpointer userdata;
 } GcFuncData;
 
-typedef struct {
-   char *from;
-   char *message;
-   time_t mtime;
-   PurpleMessageFlags flags;
-} GOfflineMessage;
+struct RequestMemoryStruct {
+   char* memory;
+   size_t size;
+};
 
 #endif /* VOIPMS_H */
 

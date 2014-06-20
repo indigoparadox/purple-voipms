@@ -84,6 +84,76 @@ static void report_status_change(
    discover_status( to, from, NULL );
 }
 
+static size_t voipms_api_request_write_body_callback(
+   void* contents, size_t size, size_t nmemb, void* userp
+) {
+   size_t realsize = size * nmemb;
+   struct RequestMemoryStruct* mem = (struct RequestMemoryStruct*)userp;
+
+   mem->memory = realloc( mem->memory, mem->size + realsize + 1 );
+   if( NULL == mem->memory ) {
+      /* TODO: Alert to memory problems, somehow. */
+      return 0;
+   }
+
+   memcpy( &(mem->memory[mem->size]), contents, realsize );
+   mem->size += realsize;
+   mem->memory[mem->size] = 0;
+
+   return realsize;
+}
+
+static CURLcode voipms_api_request(
+   char** options, PurpleAccount* account, char** buffer_ptr, char* error_buffer
+) {
+   CURL* curl = NULL;
+   CURLcode res;
+   const char* api_url;
+   struct RequestMemoryStruct chunk;
+
+   /* Setup some buffers and stuff. */
+   chunk.memory = malloc( 1 );
+   chunk.size = 0;
+
+   api_url = purple_account_get_string(
+      account,
+      "api_url",
+      VOIPMS_PLUGIN_DEFAULT_API_URL
+   );
+
+   curl = curl_easy_init();
+
+   /* Setup the request. */
+   curl_easy_setopt( curl, CURLOPT_URL, api_url );
+   curl_easy_setopt(
+      curl, CURLOPT_WRITEFUNCTION, voipms_api_request_write_body_callback
+   );
+
+   /* Only write to the buffers provided. */
+   if( NULL != buffer_ptr ) {
+      curl_easy_setopt( curl, CURLOPT_WRITEDATA, (void*)(&chunk) );
+   }
+
+   if( NULL != error_buffer ) {
+      curl_easy_setopt( curl, CURLOPT_ERRORBUFFER, error_buffer );
+   }
+
+   /* Perform the request and return the result. */
+   res = curl_easy_perform( curl );
+   curl_easy_cleanup( curl );
+   if( NULL != buffer_ptr ) {
+      *buffer_ptr = calloc( (chunk.size + 1), sizeof( char ) );
+      memcpy( *buffer_ptr, chunk.memory, chunk.size );
+   }
+   free( chunk.memory );
+   purple_debug_info(
+      "voipms",
+      "Response from server: %s\n",
+      *buffer_ptr
+   );
+   return res;
+}
+
 static void voipms_login( PurpleAccount* acct ) {
    PurpleConnection* gc = purple_account_get_connection( acct );
  
@@ -128,11 +198,14 @@ static int voipms_send_im(
       ((flags & ~PURPLE_MESSAGE_SEND) | PURPLE_MESSAGE_RECV);
    PurpleAccount* to_acct = purple_accounts_find( who, VOIPMS_PLUGIN_ID );
    PurpleConnection* to;
-   char* msg;
-   char curl_error_str[CURL_ERROR_SIZE];
-   CURL* curl = NULL;
    CURLcode res;
    int retval = 1;
+   char* msg,
+      * buffer_ptr = NULL,
+      curl_error_str[CURL_ERROR_SIZE],
+      * api_options[] = {
+         "method=sendSMS"
+      };
 
    purple_debug_info(
       "voipms",
@@ -157,18 +230,12 @@ static int voipms_send_im(
       goto send_im_cleanup;
    }
 
-   api_url = purple_account_get_string(
+   res = voipms_api_request(
+      api_options,
       gc->account,
-      "api_url",
-      VOIPMS_PLUGIN_DEFAULT_API_URL
+      &buffer_ptr,
+      curl_error_str
    );
-
-   curl = curl_easy_init();
-
-   curl_easy_setopt( curl, CURLOPT_URL, api_url );
-   curl_easy_setopt( curl, CURLOPT_ERRORBUFFER, curl_error_str );
-
-   res = curl_easy_perform( curl );
 
    /* Return success or fail based on response. */
    if( CURLE_OK != res ) {
@@ -191,11 +258,11 @@ static int voipms_send_im(
 
 send_im_cleanup:
 
-   if( NULL != curl ) {
-      curl_easy_cleanup( curl );
-   }
-
    //serv_got_im( to, from_username, message, receive_flags, time( NULL ) );
+   
+   if( NULL != buffer_ptr ) {
+      free( buffer_ptr );
+   }
 
    return retval;
 }
