@@ -166,8 +166,6 @@ JsonParser* voipms_api_request(
       arg_iter = g_slist_next( arg_iter );
    }
 
-   printf( "%s\n", api_url );
-
    /* Setup the request. */
    curl = curl_easy_init();
    curl_easy_setopt( curl, CURLOPT_URL, api_url );
@@ -214,29 +212,54 @@ api_request_cleanup:
    return parser;
 }
 
+static void messages_foreach_free( gpointer data ) {
+   struct VoipMsMessage* message = (struct VoipMsMessage*)data;
+
+   if( NULL == message || NULL == message->message ) {
+      return;
+   }
+
+   g_free( message->id );
+   g_free( message->contact );
+   g_free( message->message );
+}
+
+static void messages_foreach_serve( gpointer data, gpointer user_data ) {
+   struct VoipMsMessage* message = (struct VoipMsMessage*)data;
+   
+   /* Pass the message on to the user. */
+   serv_got_im(
+      message->account->gc,
+      message->contact,
+      message->message,
+      PURPLE_MESSAGE_RECV,
+      mktime( &(message->timeinfo) )
+   );
+}
+
 static void messages_foreach_process(
    JsonArray* array, guint index_, JsonNode* element_node, gpointer user_data
 ) {
-   PurpleAccount* acct = (PurpleAccount*)user_data;
-   JsonObject* message;
-   const gchar* id,
-      * date;
-   struct tm message_timeinfo;
+   struct GcFuncDataMessageList* gcfdata =
+      (struct GcFuncDataMessageList*)user_data;
+   JsonObject* message_json;
+   struct VoipMsMessage* message;
+   const gchar* date;
 
    /* Parse/translate message metadata. */
-   message = json_node_get_object( element_node );
-   id = json_object_get_string_member( message, "id" );
-   date = json_object_get_string_member( message, "date" );
-   strptime( date, "%Y-%m-%d %H:%M:%S", &message_timeinfo );
+   message = calloc( 1, sizeof( struct VoipMsMessage ) );
+   message_json = json_node_get_object( element_node );
+   message->id =
+      g_strdup( json_object_get_string_member( message_json, "id" ) );
+   date = json_object_get_string_member( message_json, "date" );
+   message->contact = 
+      g_strdup( json_object_get_string_member( message_json, "contact" ) );
+   message->message = 
+      g_strdup( json_object_get_string_member( message_json, "message" ) );
+   message->account = gcfdata->account;
+   strptime( date, "%Y-%m-%d %H:%M:%S", &(message->timeinfo) );
 
-   /* Pass the message on to the user. */
-   serv_got_im(
-      acct->gc,
-      json_object_get_string_member( message, "contact" ),
-      json_object_get_string_member( message, "message" ),
-      PURPLE_MESSAGE_RECV,
-      mktime( &message_timeinfo )
-   );
+   gcfdata->messages = g_list_append( gcfdata->messages, message );
 }
 
 static gboolean voipms_messages_timer( PurpleAccount* acct ) {
@@ -253,6 +276,7 @@ static gboolean voipms_messages_timer( PurpleAccount* acct ) {
    JsonObject* response = NULL;
    JsonArray* messages = NULL;
    const gchar* status;
+   struct GcFuncDataMessageList message_list = { NULL, acct };
 
    /* Calculate as wide a range as the API will allow us. */
    /* TODO: Use glib functions for this? */
@@ -305,14 +329,16 @@ static gboolean voipms_messages_timer( PurpleAccount* acct ) {
       
    messages = json_object_get_array_member( response, "sms" );  
    json_array_foreach_element(
-      messages, messages_foreach_process, acct
+      messages, messages_foreach_process, &message_list
    );
+   message_list.messages = g_list_reverse( message_list.messages );
+   g_list_foreach( message_list.messages, messages_foreach_serve, NULL );
 
 messages_timer_cleanup:
 
    g_object_unref( parser );
-
    g_slist_free_full( api_args, g_free );
+   g_list_free_full( message_list.messages, messages_foreach_free );
 
    #if 0
    free( timeinfo );
