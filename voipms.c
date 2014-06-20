@@ -21,6 +21,15 @@ static void voipms_destroy( PurplePlugin* );
 
 static PurplePlugin* _voipms_protocol = NULL;
 
+static PurpleConnection* get_voipms_gc( const char* username ) {
+   PurpleAccount* acct = purple_accounts_find( username, VOIPMS_PLUGIN_ID );
+   if( acct && purple_account_is_connected( acct ) ) {
+      return acct->gc;
+   } else {
+      return NULL;
+   }
+}
+
 static void call_if_voipms( gpointer data, gpointer userdata ) {
    PurpleConnection* gc = (PurpleConnection*)(data);
    GcFuncData* gcfdata = (GcFuncData*)userdata;
@@ -254,11 +263,15 @@ static int voipms_send_im(
       goto send_im_cleanup;
    }
 
-   /* Return success or fail based on the API call success. */
+   /* TODO: Return success or fail based on the API call success. */
+
+   /* Is the recipient online? */
+   to = get_voipms_gc( who );
+   if( to ) {
+      serv_got_im( to, from_username, message, receive_flags, time( NULL ) );
+   }
 
 send_im_cleanup:
-
-   //serv_got_im( to, from_username, message, receive_flags, time( NULL ) );
    
    if( NULL != buffer_ptr ) {
       free( buffer_ptr );
@@ -429,11 +442,18 @@ static void voipms_init( PurplePlugin* plugin ) {
       "api_url",                
       VOIPMS_PLUGIN_DEFAULT_API_URL
    );
+   prpl_info.protocol_options = g_list_append( NULL, option );
 
+   option = purple_account_option_string_new(
+      "Account DID",
+      "did",                
+      ""
+   );
+   prpl_info.protocol_options = g_list_append( NULL, option );
+ 
    purple_debug_info( "voipms", "Starting up...\n" );
 
    //prpl_info.user_splits = g_list_append(NULL, split);
-   prpl_info.protocol_options = g_list_append( NULL, option );
 
    _voipms_protocol = plugin;
 }
