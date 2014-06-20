@@ -226,6 +226,13 @@ static void messages_foreach_free( gpointer data ) {
 
 static void messages_foreach_serve( gpointer data, gpointer user_data ) {
    struct VoipMsMessage* message = (struct VoipMsMessage*)data;
+   char curl_error_str[VOIPMS_ERROR_SIZE];
+   GSList* api_args = NULL;
+   JsonParser* parser = NULL;
+   JsonNode* root = NULL;
+   JsonObject* response = NULL;
+   JsonArray* messages = NULL;
+   const gchar* status;
    
    /* Pass the message on to the user. */
    serv_got_im(
@@ -235,6 +242,39 @@ static void messages_foreach_serve( gpointer data, gpointer user_data ) {
       PURPLE_MESSAGE_RECV,
       mktime( &(message->timeinfo) )
    );
+
+   /* Delete the message from the server. */
+
+   /* Build and send the API request. */
+   api_args = g_slist_append( api_args, g_strdup( "method=deleteSMS" ) );
+   api_args = g_slist_append(
+      api_args,
+      g_strdup_printf( "id=%s", message->id )
+   );
+
+   parser = voipms_api_request(
+      &api_args,
+      message->account,
+      curl_error_str
+   );
+
+   if( NULL == parser ) {
+      goto messages_serve_cleanup;
+   }
+
+   root = json_parser_get_root( parser );
+   response = json_node_get_object( root );
+   status = json_object_get_string_member( response, "status" );
+   if( strcmp( status, "success" ) ) {
+      purple_debug_error( "voipms", "Request status: %s", status );
+      goto messages_serve_cleanup;
+   }
+
+messages_serve_cleanup:
+
+   g_object_unref( parser );
+   g_slist_free_full( api_args, g_free );
+      
 }
 
 static void messages_foreach_process(
