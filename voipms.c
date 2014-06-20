@@ -112,17 +112,17 @@ static size_t voipms_api_request_write_body_callback(
    return realsize;
 }
 
-static gboolean voipms_api_request(
-   GSList** args, PurpleAccount* account, char** buffer_ptr, char* error_buffer
+JsonParser* voipms_api_request(
+   GSList** args, PurpleAccount* account, char* error_buffer
 ) {
    CURL* curl = NULL;
    CURLcode res;
    struct RequestMemoryStruct chunk;
    GSList* arg_iter;
    char* api_url = NULL;
-   gboolean retval = TRUE;
    size_t new_length = 1,
       old_length = 0;
+   JsonParser* parser = NULL;
 
    /* Setup some buffers and stuff. */
    chunk.memory = malloc( 1 );
@@ -173,9 +173,7 @@ static gboolean voipms_api_request(
    );
 
    /* Only write to the buffers provided. */
-   if( NULL != buffer_ptr ) {
-      curl_easy_setopt( curl, CURLOPT_WRITEDATA, (void*)(&chunk) );
-   }
+   curl_easy_setopt( curl, CURLOPT_WRITEDATA, (void*)(&chunk) );
 
    if( NULL != error_buffer ) {
       curl_easy_setopt( curl, CURLOPT_ERRORBUFFER, error_buffer );
@@ -184,14 +182,19 @@ static gboolean voipms_api_request(
    /* Perform the request and return the result. */
    res = curl_easy_perform( curl );
    if( CURLE_OK != res ) {
+      /* TODO: Handle me. */
    }
 
-   if( NULL != buffer_ptr ) {
-      *buffer_ptr = calloc( (chunk.size + 1), sizeof( char ) );
-      memcpy( *buffer_ptr, chunk.memory, chunk.size );
-   }
+   purple_debug_info( "voipms", "Response from server: %s\n", chunk.memory );
 
-   purple_debug_info( "voipms", "Response from server: %s\n", *buffer_ptr );
+   parser = json_parser_new();
+   if( !json_parser_load_from_data( parser, chunk.memory, chunk.size, NULL ) ) {
+      purple_debug_error(
+         "voipms", "Error parsing response: %s\n", chunk.memory
+      );
+      g_object_unref( parser );
+      parser = NULL;
+   }
 
 api_request_cleanup:
 
@@ -200,10 +203,10 @@ api_request_cleanup:
    free( chunk.memory );
    
    if( NULL != api_url ) {
-      g_free( api_url );
+      free( api_url );
    }
-   
-   return retval;
+
+   return parser;
 }
 
 static void voipms_login( PurpleAccount* acct ) {
@@ -244,17 +247,19 @@ static int voipms_send_im(
    PurpleConnection* gc, const char* who, const char* message,
    PurpleMessageFlags flags
 ) {
-   const char *from_username = gc->account->username;
+   const char* from_username = gc->account->username;
+   const gchar* status;
    PurpleMessageFlags receive_flags = 
       ((flags & ~PURPLE_MESSAGE_SEND) | PURPLE_MESSAGE_RECV);
    PurpleAccount* to_acct = purple_accounts_find( who, VOIPMS_PLUGIN_ID );
    PurpleConnection* to;
-   CURLcode res;
    int retval = 1;
    char* msg,
-      * buffer_ptr = NULL,
       curl_error_str[VOIPMS_ERROR_SIZE];
    GSList* api_args = NULL;
+   JsonParser* parser = NULL;
+   JsonNode* root = NULL;
+   JsonObject* response = NULL;
 
    purple_debug_info(
       "voipms",
@@ -302,15 +307,14 @@ static int voipms_send_im(
       )
    );
 
-   res = voipms_api_request(
+   parser = voipms_api_request(
       &api_args,
       gc->account,
-      &buffer_ptr,
       curl_error_str
    );
 
    /* Return success or fail based on response. */
-   if( !res ) {
+   if( NULL == parser ) {
       msg = g_strdup_printf(
          "There was a problem contacting the VOIP.ms API: %s", curl_error_str
       );
@@ -324,7 +328,20 @@ static int voipms_send_im(
       goto send_im_cleanup;
    }
 
-   /* TODO: Return success or fail based on the API call success. */
+   /* Return success or fail based on the API call success. */
+   root = json_parser_get_root( parser );
+   response = json_node_get_object( root );
+   status = json_object_get_string_member( response, "status" );
+   if( strcmp( status, "success" ) ) {
+      msg = g_strdup_printf(
+         "There was a problem sending the message: %s", status
+      );
+      purple_debug_error( "voipms", "Request status: %s", status );
+      purple_conv_present_error( who, gc->account, msg );
+      g_free( msg );
+      retval = 0;
+      goto send_im_cleanup;
+   }
 
    /* Is the recipient online? */
    to = get_voipms_gc( who );
@@ -334,11 +351,9 @@ static int voipms_send_im(
 
 send_im_cleanup:
    
-   if( NULL != buffer_ptr ) {
-      free( buffer_ptr );
-   }
+   g_object_unref( parser );
 
-   //g_slist_free_full( api_args, g_free );
+   g_slist_free_full( api_args, g_free );
 
    return retval;
 }
