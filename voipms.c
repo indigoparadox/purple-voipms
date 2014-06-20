@@ -113,12 +113,12 @@ static size_t voipms_api_request_write_body_callback(
 }
 
 static gboolean voipms_api_request(
-   GSList* args, PurpleAccount* account, char** buffer_ptr, char* error_buffer
+   GSList** args, PurpleAccount* account, char** buffer_ptr, char* error_buffer
 ) {
    CURL* curl = NULL;
    CURLcode res;
    struct RequestMemoryStruct chunk;
-   GSList* arg_iter = args;
+   GSList* arg_iter;
    char* api_url = NULL;
    gboolean retval = TRUE;
    size_t new_length = 1,
@@ -128,7 +128,16 @@ static gboolean voipms_api_request(
    chunk.memory = malloc( 1 );
    chunk.size = 0;
 
+   /* Add the credentials to the request. */
+   *args = g_slist_append( *args, g_strdup_printf( "api_username=%s",
+      purple_url_encode( account->username )
+   ) );
+   *args = g_slist_append( *args, g_strdup_printf( "api_password=%s",
+      purple_url_encode( account->password )
+   ) );
+
    /* Build the query string. */
+   arg_iter = *args;
    api_url = g_strdup_printf( "%s?", purple_account_get_string(
       account, "api_url", VOIPMS_PLUGIN_DEFAULT_API_URL
    ) );
@@ -155,9 +164,6 @@ static gboolean voipms_api_request(
 
       arg_iter = g_slist_next( arg_iter );
    }
-
-   /* XXX */
-   printf( "%s\n", api_url );
 
    /* Setup the request. */
    curl = curl_easy_init();
@@ -286,7 +292,7 @@ static int voipms_send_im(
    api_args = g_slist_append(
       api_args,
       g_strdup_printf(
-         "dst=%s", purple_url_encode( from_username )
+         "dst=%s", purple_url_encode( who )
       )
    );
    api_args = g_slist_append(
@@ -297,7 +303,7 @@ static int voipms_send_im(
    );
 
    res = voipms_api_request(
-      api_args,
+      &api_args,
       gc->account,
       &buffer_ptr,
       curl_error_str
@@ -332,7 +338,7 @@ send_im_cleanup:
       free( buffer_ptr );
    }
 
-   g_slist_free_full( api_args, g_free );
+   //g_slist_free_full( api_args, g_free );
 
    return retval;
 }
