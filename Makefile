@@ -1,6 +1,6 @@
 
 LIBPURPLE_CFLAGS += $(shell pkg-config --cflags glib-2.0 json-glib-1.0 purple nss gnome-keyring-1)
-LIBPURPLE_LIBS += $(shell pkg-config --libs glib-2.0 json-glib-1.0 purple nss)
+LIBPURPLE_LIBS += -lcurl $(shell pkg-config --libs glib-2.0 json-glib-1.0 purple nss)
 
 CFLAGS += -fPIC
 

@@ -122,12 +122,17 @@ static int voipms_send_im(
    PurpleConnection* gc, const char* who, const char* message,
    PurpleMessageFlags flags
 ) {
-   const char *from_username = gc->account->username;
+   const char *from_username = gc->account->username,
+      * api_url;
    PurpleMessageFlags receive_flags = 
       ((flags & ~PURPLE_MESSAGE_SEND) | PURPLE_MESSAGE_RECV);
    PurpleAccount* to_acct = purple_accounts_find( who, VOIPMS_PLUGIN_ID );
    PurpleConnection* to;
    char* msg;
+   char curl_error_str[CURL_ERROR_SIZE];
+   CURL* curl = NULL;
+   CURLcode res;
+   int retval = 1;
 
    purple_debug_info(
       "voipms",
@@ -148,13 +153,62 @@ static int voipms_send_im(
       );
       purple_conv_present_error( who, gc->account, msg );
       g_free( msg );
-      return 0;
-  }
+      retval = 0;
+      goto send_im_cleanup;
+   }
 
-   serv_got_im( to, from_username, message, receive_flags, time( NULL ) );
+   api_url = purple_account_get_string(
+      gc->account,
+      "api_url",
+      VOIPMS_PLUGIN_DEFAULT_API_URL
+   );
 
-   return 1;
+   curl = curl_easy_init();
+
+   curl_easy_setopt( curl, CURLOPT_URL, api_url );
+   curl_easy_setopt( curl, CURLOPT_ERRORBUFFER, curl_error_str );
+
+   res = curl_easy_perform( curl );
+
+   /* Return success or fail based on response. */
+   if( CURLE_OK != res ) {
+      msg = g_strdup_printf(
+         "There was a problem contacting the VOIP.ms API at %s: %s",
+         api_url, curl_error_str
+      );
+      purple_debug_info(
+         "voipms",
+         "Discarding; there was a problem contacting the VOIP.ms API at %s.",
+         api_url
+      );
+      purple_conv_present_error( who, gc->account, msg );
+      g_free( msg );
+      retval = 0;
+      goto send_im_cleanup;
+   }
+
+   /* Return success or fail based on the API call success. */
+
+send_im_cleanup:
+
+   if( NULL != curl ) {
+      curl_easy_cleanup( curl );
+   }
+
+   //serv_got_im( to, from_username, message, receive_flags, time( NULL ) );
+
+   return retval;
 }
+
+#if 0
+static void voipms_change_passwd(
+   PurpleConnection* gc, const char* old_pass, const char* new_pass
+) {
+   purple_debug_info(
+      "voipms", "%s wants to change their password\n", gc->account->username
+   );
+}
+#endif
 
 static GList* voipms_status_types( PurpleAccount* acct ) {
    GList* types = NULL;
@@ -176,8 +230,8 @@ static const char* voipms_list_icon( PurpleAccount* acct, PurpleBuddy* buddy ) {
 }
 
 static PurplePluginProtocolInfo prpl_info = {
-   OPT_PROTO_NO_PASSWORD | OPT_PROTO_CHAT_TOPIC,  /* options */
-   NULL,               /* user_splits, initialized in voipms_init() */
+   0,                               /* options */
+   NULL,                               /* user_splits */
    NULL,               /* protocol_options, initialized in voipms_init() */
    {   /* icon_spec, a PurpleBuddyIconSpec */
        "png,jpg,gif",                  /* format */
@@ -204,6 +258,7 @@ static PurplePluginProtocolInfo prpl_info = {
    NULL,                               /* get_info */
    NULL,                               /* set_status */
    NULL,                               /* set_idle */
+   //voipms_change_passwd,               /* change_passwd */
    NULL,                               /* change_passwd */
    NULL,                               /* add_buddy */
    NULL,                               /* add_buddies */
@@ -305,7 +360,7 @@ static void voipms_init( PurplePlugin* plugin ) {
    option = purple_account_option_string_new(
       "REST GET API URL",
       "api_url",                
-      "https://voip.ms/api/v1/rest.php"
+      VOIPMS_PLUGIN_DEFAULT_API_URL
    );
 
    purple_debug_info( "voipms", "Starting up...\n" );
