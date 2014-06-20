@@ -165,6 +165,8 @@ JsonParser* voipms_api_request(
       arg_iter = g_slist_next( arg_iter );
    }
 
+   printf( "%s\n", api_url );
+
    /* Setup the request. */
    curl = curl_easy_init();
    curl_easy_setopt( curl, CURLOPT_URL, api_url );
@@ -256,6 +258,7 @@ static int voipms_send_im(
    int retval = 1;
    char* msg,
       curl_error_str[VOIPMS_ERROR_SIZE];
+   gchar* api_message = NULL;
    GSList* api_args = NULL;
    JsonParser* parser = NULL;
    JsonNode* root = NULL;
@@ -284,7 +287,10 @@ static int voipms_send_im(
       goto send_im_cleanup;
    }
 
-   /* TODO: Strip whitespace from the head/tail of the message. */
+   /* Strip the whitespace from the ends of the string. Useful in case we     *
+    * have something like OTR installed.                                      */
+   api_message = g_strdup( message );
+   g_strstrip( api_message );
 
    /* Build and send the API request. */
    api_args = g_slist_append( api_args, g_strdup( "method=sendSMS" ) );
@@ -303,7 +309,7 @@ static int voipms_send_im(
    api_args = g_slist_append(
       api_args,
       g_strdup_printf(
-         "message=%s", purple_url_encode( message )
+         "message=%s", purple_url_encode( api_message )
       )
    );
 
@@ -354,6 +360,10 @@ send_im_cleanup:
    g_object_unref( parser );
 
    g_slist_free_full( api_args, g_free );
+
+   if( NULL != api_message ) {
+      g_free( api_message );
+   }
 
    return retval;
 }
