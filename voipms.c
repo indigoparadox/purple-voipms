@@ -145,6 +145,7 @@ JsonParser* voipms_api_request(
    old_length = strlen( api_url );
    while( NULL != arg_iter ) {
       /* Append each arg to the query string. */
+      /* TODO: Use glib functions for this? */
       new_length += strlen( arg_iter->data );
       api_url = realloc( api_url, new_length );
       memcpy(
@@ -164,8 +165,6 @@ JsonParser* voipms_api_request(
 
       arg_iter = g_slist_next( arg_iter );
    }
-
-   printf( "%s\n", api_url );
 
    /* Setup the request. */
    curl = curl_easy_init();
