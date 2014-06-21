@@ -579,6 +579,14 @@ static void voipms_set_status( PurpleAccount* acct, PurpleStatus* status ) {
    );
 }
 
+static void voipms_alias_buddy(
+   PurpleConnection* gc, const char* who, const char* alias
+) {
+   purple_debug_info(
+      "voipms", "%s sets %s's alias to %s\n", gc->account->username, who, alias
+   );
+}
+
 #if 0
 static void voipms_change_passwd(
    PurpleConnection* gc, const char* old_pass, const char* new_pass
@@ -658,7 +666,7 @@ static PurplePluginProtocolInfo prpl_info = {
    NULL,                               /* register_user */
    NULL,                               /* get_cb_info */
    NULL,                               /* get_cb_away */
-   NULL,                               /* alias_buddy */
+   voipms_alias_buddy,                 /* alias_buddy */
    NULL,                               /* group_buddy */
    NULL,                               /* rename_group */
    NULL,                               /* buddy_free */
