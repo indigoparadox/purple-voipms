@@ -53,6 +53,7 @@ JsonParser* voipms_api_request(
    size_t new_length = 1,
       old_length = 0;
    JsonParser* parser = NULL;
+   struct VoipMsAccount* proto_data = account->gc->proto_data;
 
    /* Setup some buffers and stuff. */
    chunk.memory = malloc( 1 );
@@ -110,11 +111,16 @@ JsonParser* voipms_api_request(
       curl_easy_setopt( curl, CURLOPT_ERRORBUFFER, error_buffer );
    }
 
+   curl_multi_add_handle( proto_data->multi_handle, curl );
+   curl_multi_perform( proto_data->multi_handle
+
+   #if 0
    /* Perform the request and return the result. */
    res = curl_easy_perform( curl );
    if( CURLE_OK != res ) {
       /* TODO: Handle me. */
    }
+   #endif
 
    #if 0
    purple_debug_info( "voipms", "Response from server: %s\n", chunk.memory );
@@ -400,6 +406,7 @@ static void voipms_login( PurpleAccount* acct ) {
    PurpleConnection* gc = purple_account_get_connection( acct );
    struct VoipMsAccount* vmsa;
 
+   /* Setup the protocol data section. */
    vmsa = calloc( 1, sizeof( struct VoipMsAccount ) );
    acct->gc->proto_data = vmsa;
  
@@ -409,14 +416,18 @@ static void voipms_login( PurpleAccount* acct ) {
       gc,
       "Connecting",
       0, /* Which connection step this is. */
-      2  /* Total number of steps */
+      2  /* Total number of steps. */
    );
+
+   /* Setup the CURL multi handle. */
+   vmsa->multi_handle = curl_multi_init();
  
-   #if 0
-   purple_connection_update_progress(gc, "Connected",
-                                     1,   /* which connection step this is */
-                                     2);  /* total number of steps */
-   #endif
+   purple_connection_update_progress(
+      gc,
+      "Connected",
+      1, /* Which connection step this is. */
+      2  /* Total number of steps. */
+   );
 
    purple_connection_set_state( gc, PURPLE_CONNECTED );
  
@@ -439,6 +450,9 @@ static void voipms_close( PurpleConnection* gc ) {
    if( vmsa->timer ) {
       purple_timeout_remove( vmsa->timer );
    }
+
+   /* Shut down CURL. */
+   curl_multi_cleanup( vmsa->multi_handle );
 
    /* Notify other VOIP.ms accounts. */
    foreach_voipms_gc( report_status_change, gc, NULL );
