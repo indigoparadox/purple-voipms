@@ -78,7 +78,8 @@ struct RequestMemoryStruct {
 };
 
 struct VoipMsAccount {
-   guint timer;
+   guint timer; 
+   CURLM* multi_handle;
 };
 
 struct VoipMsMessage {
