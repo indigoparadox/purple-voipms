@@ -273,7 +273,7 @@ static void messages_foreach_serve( gpointer data, gpointer user_data ) {
    response = json_node_get_object( root );
    status = json_object_get_string_member( response, "status" );
    if( strcmp( status, "success" ) ) {
-      purple_debug_error( "voipms", "Request status: %s", status );
+      purple_debug_error( "voipms", "Request status: %s\n", status );
       goto messages_serve_cleanup;
    }
 
@@ -369,8 +369,8 @@ static gboolean voipms_messages_timer( PurpleAccount* acct ) {
    root = json_parser_get_root( parser );
    response = json_node_get_object( root );
    status = json_object_get_string_member( response, "status" );
-   if( strcmp( status, "success" ) ) {
-      purple_debug_error( "voipms", "Request status: %s", status );
+   if( strcmp( status, "success" ) && strcmp( status, "no_sms" ) ) {
+      purple_debug_error( "voipms", "Request status: %s\n", status );
       goto messages_timer_cleanup;
    }
       
@@ -567,6 +567,18 @@ send_im_cleanup:
    return retval;
 }
 
+static void voipms_set_status( PurpleAccount* acct, PurpleStatus* status ) {
+   const char* msg = purple_status_get_attr_string( status, "message" );
+   purple_debug_info( 
+      "voipms", "Setting %s's status to %s: %s\n",
+      acct->username, purple_status_get_name( status ), msg
+   );
+
+   foreach_voipms_gc(
+      report_status_change, get_voipms_gc( acct->username ), NULL
+   );
+}
+
 #if 0
 static void voipms_change_passwd(
    PurpleConnection* gc, const char* old_pass, const char* new_pass
@@ -623,9 +635,8 @@ static PurplePluginProtocolInfo prpl_info = {
    NULL,                               /* set_info */
    NULL,                               /* send_typing */
    NULL,                               /* get_info */
-   NULL,                               /* set_status */
+   voipms_set_status,                  /* set_status */
    NULL,                               /* set_idle */
-   //voipms_change_passwd,               /* change_passwd */
    NULL,                               /* change_passwd */
    NULL,                               /* add_buddy */
    NULL,                               /* add_buddies */
