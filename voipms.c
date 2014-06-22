@@ -74,6 +74,7 @@ static void voipms_api_request(
    /* Add the method to the request. */
    switch( method ) {
       case VOIPMS_METHOD_GETSMS:
+         proto_data->get_request_in_progress = TRUE;
          args = g_slist_append( args, g_strdup( "method=getSMS" ) );
          break;
 
@@ -123,7 +124,7 @@ static void voipms_api_request(
       curl, CURLOPT_WRITEFUNCTION, voipms_api_request_write_body_callback
    );
    curl_easy_setopt( curl, CURLOPT_PRIVATE, request_data );
-   curl_easy_setopt( curl, CURLOPT_WRITEDATA, (*request_data).chunk );
+   curl_easy_setopt( curl, CURLOPT_WRITEDATA, &((*request_data).chunk) );
    curl_easy_setopt( curl, CURLOPT_ERRORBUFFER, request_data->error_buffer );
    curl_easy_setopt( curl, CURLOPT_FAILONERROR, 1 );
 
@@ -207,6 +208,16 @@ static void voipms_api_request_progress( PurpleAccount* account ) {
    purple_debug_info(
       "voipms", "Response from server: %s\n", (*request_data).chunk.memory
    );
+
+   switch( request_data->method ) {
+      case VOIPMS_METHOD_GETSMS:
+         proto_data->get_request_in_progress = FALSE;
+         break;
+   }
+
+   /* Cleanup the handle we were just working with. */
+   curl_multi_remove_handle( proto_data->multi_handle, msg->easy_handle );
+   curl_easy_cleanup( msg->easy_handle );
 
 api_request_progress_cleanup:
 
@@ -396,6 +407,7 @@ static gboolean voipms_messages_timer( PurpleAccount* acct ) {
    JsonArray* messages = NULL;
    const gchar* status;
    struct GcFuncDataMessageList message_list = { NULL, acct };
+   struct VoipMsAccount* proto_data = acct->gc->proto_data;
 
    /* Calculate as wide a range as the API will allow us. */
    /* TODO: Use glib functions for this? */
@@ -427,7 +439,11 @@ static gboolean voipms_messages_timer( PurpleAccount* acct ) {
       )
    );
 
-   voipms_api_request( VOIPMS_METHOD_GETSMS, api_args, acct );
+   /* Don't pile on getSMS requests. */
+   if( !proto_data->get_request_in_progress ) {
+      purple_debug_info( "voipms", "Polling the server for messages...\n" );
+      voipms_api_request( VOIPMS_METHOD_GETSMS, api_args, acct );
+   }
 
    /* Check on all the requests so far. */
    voipms_api_request_progress( acct );
@@ -504,7 +520,7 @@ static void voipms_login( PurpleAccount* acct ) {
 
    /* Start polling for new messages. */
    vmsa->timer = purple_timeout_add_seconds(
-      5, (GSourceFunc)voipms_messages_timer, acct
+      VOIPMS_POLL_SECONDS, (GSourceFunc)voipms_messages_timer, acct
    );
  
    /* Notify other VOIP.ms accounts. */
@@ -594,6 +610,8 @@ static int voipms_send_im(
    );
 
    voipms_api_request( VOIPMS_METHOD_SENDSMS, api_args, gc->account );
+
+   /* TODO: Somehow block until request completes. */
 
    #if 0
    /* Return success or fail based on response. */
