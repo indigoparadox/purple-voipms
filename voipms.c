@@ -303,69 +303,6 @@ static PurpleConnection* get_voipms_gc( const char* username ) {
    }
 }
 
-static void call_if_voipms( gpointer data, gpointer userdata ) {
-   PurpleConnection* gc = (PurpleConnection*)(data);
-   struct GcFuncData* gcfdata = (struct GcFuncData*)userdata;
-
-   if( !strcmp( gc->account->protocol_id, VOIPMS_PLUGIN_ID ) ) {
-      gcfdata->fn( gcfdata->from, gc, gcfdata->userdata );
-   }
-}
-
-static void foreach_voipms_gc(
-   GcFunc fn, PurpleConnection* from, gpointer userdata
-) {
-   struct GcFuncData gcfdata = { fn, from, userdata };
-   g_list_foreach(
-      purple_connections_get_all(), call_if_voipms, &gcfdata
-   );
-}
-
-static void discover_status(
-   PurpleConnection* from, PurpleConnection* to, gpointer userdata
-) {
-   const char* from_username = from->account->username;
-   const char* to_username = to->account->username;
-   const char* status_id;
-   const char* message;
-
-   if( purple_find_buddy( from->account, to_username ) ) {
-      PurpleStatus *status = purple_account_get_active_status( to->account );
-      status_id = purple_status_get_id( status );
-      message = purple_status_get_attr_string( status, "message" );
-
-      if( !strcmp( status_id, VOIPMS_STATUS_ONLINE ) ) {
-         purple_debug_info(
-            "voipms",
-            "%s sees that %s is %s: %s\n",
-            from_username, to_username, status_id, message
-         );
-         purple_prpl_got_user_status(
-            from->account, to_username, status_id,
-            (message) ? "message" : NULL, message, NULL
-         );
-      } else {
-         purple_debug_error(
-            "voipms",
-            "%s's buddy %s has an unknown status: %s, %s",
-            from_username, to_username, status_id, message
-         );
-      }
-   }
-}
-
-static void report_status_change(
-   PurpleConnection* from, PurpleConnection* to, gpointer userdata
-) {
-   purple_debug_info(
-      "voipms",
-      "Notifying %s that %s changed status...\n",
-      to->account->username,
-      from->account->username
-   );
-   discover_status( to, from, NULL );
-}
-
 static void messages_foreach_free( gpointer data ) {
    struct VoipMsMessage* message = (struct VoipMsMessage*)data;
 
@@ -498,6 +435,7 @@ static gboolean voipms_messages_timer( PurpleAccount* acct ) {
 static void voipms_login( PurpleAccount* acct ) {
    PurpleConnection* gc = purple_account_get_connection( acct );
    struct VoipMsAccount* vmsa;
+   PurpleBlistNode* blist_node;
 
    /* Setup the protocol data section. */
    vmsa = calloc( 1, sizeof( struct VoipMsAccount ) );
@@ -524,16 +462,28 @@ static void voipms_login( PurpleAccount* acct ) {
 
    purple_connection_set_state( gc, PURPLE_CONNECTED );
  
-   /* Tell purple about everyone on our buddy list who's connected. */
-   foreach_voipms_gc( discover_status, gc, NULL );
+   /* Just set everyone online all the time. */
+   for(
+      blist_node = purple_blist_get_root();
+      NULL != blist_node;
+      blist_node = purple_blist_node_next( blist_node, FALSE )
+   ) {
+      if( !PURPLE_BLIST_NODE_IS_BUDDY( blist_node ) ) {
+         continue;
+      }
+
+      purple_prpl_got_user_status(
+         gc->account,
+         PURPLE_BLIST_NODE_NAME( blist_node ),
+         VOIPMS_STATUS_ONLINE,
+         NULL
+      );
+   }
 
    /* Start polling for new messages. */
    vmsa->timer = purple_timeout_add_seconds(
       VOIPMS_POLL_SECONDS, (GSourceFunc)voipms_messages_timer, acct
    );
- 
-   /* Notify other VOIP.ms accounts. */
-   foreach_voipms_gc( report_status_change, gc, NULL );
 }
 
 static void voipms_close( PurpleConnection* gc ) {
@@ -546,9 +496,6 @@ static void voipms_close( PurpleConnection* gc ) {
 
    /* Shut down CURL. */
    curl_multi_cleanup( vmsa->multi_handle );
-
-   /* Notify other VOIP.ms accounts. */
-   foreach_voipms_gc( report_status_change, gc, NULL );
 }
 
 static int voipms_send_im(
@@ -660,18 +607,6 @@ send_im_cleanup:
    return retval;
 }
 
-static void voipms_set_status( PurpleAccount* acct, PurpleStatus* status ) {
-   const char* msg = purple_status_get_attr_string( status, "message" );
-   purple_debug_info( 
-      "voipms", "Setting %s's status to %s: %s\n",
-      acct->username, purple_status_get_name( status ), msg
-   );
-
-   foreach_voipms_gc(
-      report_status_change, get_voipms_gc( acct->username ), NULL
-   );
-}
-
 static void voipms_alias_buddy(
    PurpleConnection* gc, const char* who, const char* alias
 ) {
@@ -736,7 +671,7 @@ static PurplePluginProtocolInfo prpl_info = {
    NULL,                               /* set_info */
    NULL,                               /* send_typing */
    NULL,                               /* get_info */
-   voipms_set_status,                  /* set_status */
+   NULL,                               /* set_status */
    NULL,                               /* set_idle */
    NULL,                               /* change_passwd */
    NULL,                               /* add_buddy */
