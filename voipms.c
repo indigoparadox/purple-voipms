@@ -432,10 +432,31 @@ static gboolean voipms_messages_timer( PurpleAccount* acct ) {
    return TRUE;
 }
 
+static void voipms_refresh_buddies( PurpleAccount* acct ) {
+   PurpleBlistNode* blist_node;
+
+   /* Just set everyone online all the time. */
+   for(
+      blist_node = purple_blist_get_root();
+      NULL != blist_node;
+      blist_node = purple_blist_node_next( blist_node, FALSE )
+   ) {
+      if( !PURPLE_BLIST_NODE_IS_BUDDY( blist_node ) ) {
+         continue;
+      }
+
+      purple_prpl_got_user_status(
+         acct,
+         PURPLE_BLIST_NODE_NAME( blist_node ),
+         VOIPMS_STATUS_ONLINE,
+         NULL
+      );
+   }
+}
+
 static void voipms_login( PurpleAccount* acct ) {
    PurpleConnection* gc = purple_account_get_connection( acct );
    struct VoipMsAccount* vmsa;
-   PurpleBlistNode* blist_node;
 
    /* Setup the protocol data section. */
    vmsa = calloc( 1, sizeof( struct VoipMsAccount ) );
@@ -462,23 +483,7 @@ static void voipms_login( PurpleAccount* acct ) {
 
    purple_connection_set_state( gc, PURPLE_CONNECTED );
  
-   /* Just set everyone online all the time. */
-   for(
-      blist_node = purple_blist_get_root();
-      NULL != blist_node;
-      blist_node = purple_blist_node_next( blist_node, FALSE )
-   ) {
-      if( !PURPLE_BLIST_NODE_IS_BUDDY( blist_node ) ) {
-         continue;
-      }
-
-      purple_prpl_got_user_status(
-         gc->account,
-         PURPLE_BLIST_NODE_NAME( blist_node ),
-         VOIPMS_STATUS_ONLINE,
-         NULL
-      );
-   }
+   voipms_refresh_buddies( gc->account );
 
    /* Start polling for new messages. */
    vmsa->timer = purple_timeout_add_seconds(
@@ -607,6 +612,21 @@ send_im_cleanup:
    return retval;
 }
 
+static void voipms_add_buddy (
+   PurpleConnection *gc, PurpleBuddy *buddy, PurpleGroup *group
+) {
+   const char *username = gc->account->username;
+
+   purple_debug_info(
+      "nullprpl",
+      "Adding %s to %s's buddy list.\n",
+      buddy->name,
+      username
+   );
+
+   voipms_refresh_buddies( gc->account );
+}
+
 static void voipms_alias_buddy(
    PurpleConnection* gc, const char* who, const char* alias
 ) {
@@ -674,7 +694,7 @@ static PurplePluginProtocolInfo prpl_info = {
    NULL,                               /* set_status */
    NULL,                               /* set_idle */
    NULL,                               /* change_passwd */
-   NULL,                               /* add_buddy */
+   voipms_add_buddy,                   /* add_buddy */
    NULL,                               /* add_buddies */
    NULL,                               /* remove_buddy */
    NULL,                               /* remove_buddies */
