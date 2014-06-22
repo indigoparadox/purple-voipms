@@ -56,7 +56,7 @@
 #endif
 
 #define VOIPMS_PLUGIN_ID "prpl-indigoparadox-voipms"
-#define VOIPMS_PLUGIN_VERSION "14.6.1"
+#define VOIPMS_PLUGIN_VERSION "14.6.2"
 #define VOIPMS_PLUGIN_WEBSITE ""
 #define VOIPMS_PLUGIN_NAME "VOIP.ms SMS Protocol"
 #define VOIPMS_PLUGIN_DEFAULT_API_URL "https://voip.ms/api/v1/rest.php"
