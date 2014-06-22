@@ -88,7 +88,7 @@ struct VoipMsAccount {
    guint timer; 
    CURLM* multi_handle;
    int still_running;
-   gboolean get_request_in_progress;
+   gboolean requests_in_progress;
 };
 
 struct VoipMsMessage {
@@ -103,6 +103,17 @@ struct VoipMsRequestData {
    VOIPMS_METHOD method;
    char* error_buffer;
    struct RequestMemoryStruct chunk;
+   void* attachment;
+};
+
+struct VoipMsSendImData {
+   const char* from_username;
+   const char* to_username;
+   const char* message;
+   PurpleMessageFlags receive_flags;
+   gboolean processed;
+   gboolean success; /* TRUE for send success, set by request monitor. */
+   gchar* error_buffer;
 };
 
 struct GcFuncData {
