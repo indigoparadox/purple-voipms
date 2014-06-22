@@ -65,6 +65,7 @@
 #define VOIPMS_DATE_BUFFER_SIZE 20
 #define VOIPMS_MAX_AGE_DAYS 91
 #define VOIPMS_DAY_SECONDS (60 * 60 * 24)
+#define VOIPMS_POLL_SECONDS 1
 
 typedef enum {
    VOIPMS_METHOD_SENDSMS,
@@ -87,6 +88,7 @@ struct VoipMsAccount {
    guint timer; 
    CURLM* multi_handle;
    int still_running;
+   gboolean get_request_in_progress;
 };
 
 struct VoipMsMessage {
