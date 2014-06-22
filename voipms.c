@@ -51,13 +51,11 @@ static void voipms_api_request(
    VOIPMS_METHOD method, GSList* args, PurpleAccount* account, void* attachment
 ) {
    CURL* curl = NULL;
-   CURLcode res;
    GSList* arg_iter;
    char* api_url = NULL;
    size_t new_length = 1,
       old_length = 0;
    struct VoipMsAccount* proto_data = account->gc->proto_data;
-   int running_previous;
    struct VoipMsRequestData* request_data;
 
    proto_data->requests_in_progress++;
@@ -136,12 +134,6 @@ static void voipms_api_request(
 
    curl_multi_add_handle( proto_data->multi_handle, curl );
 
-   #if 0
-   purple_debug_info( "voipms", "Response from server: %s\n", chunk.memory );
-   #endif
-
-api_request_cleanup:
-
    if( NULL != api_url ) {
       free( api_url );
    }
@@ -163,7 +155,6 @@ static void voipms_api_request_progress( PurpleAccount* account ) {
    const gchar* status = NULL;
    struct GcFuncDataMessageList message_list = { NULL, account };
    struct VoipMsSendImData* send_im_data = NULL;
-   PurpleConnection* to = NULL;
 
    curl_multi_perform( proto_data->multi_handle, &(proto_data->still_running) );
 
@@ -205,12 +196,12 @@ static void voipms_api_request_progress( PurpleAccount* account ) {
    proto_data->requests_in_progress--;
 
    switch( request_data->method ) {
-      case VOIPMS_METHOD_GETSMS:
-         break;
-
       case VOIPMS_METHOD_SENDSMS:
          send_im_data = (struct VoipMsSendImData*)(request_data->attachment);
          send_im_data->processed = TRUE;
+         break;
+
+      default:
          break;
    }
 
@@ -256,30 +247,10 @@ static void voipms_api_request_progress( PurpleAccount* account ) {
 
       case VOIPMS_METHOD_SENDSMS:
          send_im_data = (struct VoipMsSendImData*)(request_data->attachment);
-
          send_im_data->success = TRUE;
+         break;
 
-         /* Is the recipient online? */
-         #if 0
-         to = get_voipms_gc( send_im_data->to_username );
-         if( to ) {
-            send_im_data->success = TRUE;
-            serv_got_im(
-               to,
-               send_im_data->from_username,
-               send_im_data->message,
-               send_im_data->receive_flags,
-               time( NULL )
-            );
-         } else {
-            purple_debug_error(
-               "voipms",
-               "Couldn't send \"%s\" to %s.\n",
-               send_im_data->message,
-               send_im_data->to_username
-            );
-         }
-         #endif
+      default:
          break;
    }
 
@@ -299,12 +270,8 @@ api_request_progress_cleanup:
          free( request_data->error_buffer );
       }
       
-      #if 0
       /* Don't free the send_im_data attachment here, since we use it to send *
        * back success flag.                                                   */
-      if( VOIPMS_METHOD_SENDSMS == request_data->method ) {
-      }
-      #endif
    }
 
    g_list_free_full( message_list.messages, messages_foreach_free );
@@ -471,10 +438,6 @@ static gboolean voipms_messages_timer( PurpleAccount* acct ) {
    char from_filter_date[VOIPMS_DATE_BUFFER_SIZE] = { 0 },
       to_filter_date[VOIPMS_DATE_BUFFER_SIZE] = { 0 };
    GSList* api_args = NULL;
-   JsonNode* root = NULL;
-   JsonObject* response = NULL;
-   JsonArray* messages = NULL;
-   const gchar* status;
    struct VoipMsAccount* proto_data = acct->gc->proto_data;
 
    /* Calculate as wide a range as the API will allow us. */
@@ -515,8 +478,6 @@ static gboolean voipms_messages_timer( PurpleAccount* acct ) {
 
    /* Check on all the requests so far. */
    voipms_api_request_progress( acct );
-
-messages_timer_cleanup:
 
    return TRUE;
 }
@@ -582,7 +543,6 @@ static int voipms_send_im(
    PurpleMessageFlags flags
 ) {
    const char* from_username = gc->account->username;
-   const gchar* status;
    PurpleMessageFlags receive_flags = 
       ((flags & ~PURPLE_MESSAGE_SEND) | PURPLE_MESSAGE_RECV);
    PurpleAccount* to_acct = purple_accounts_find( who, VOIPMS_PLUGIN_ID );
@@ -591,10 +551,7 @@ static int voipms_send_im(
    char* msg;
    gchar* api_message = NULL;
    GSList* api_args = NULL;
-   JsonNode* root = NULL;
-   JsonObject* response = NULL;
-   struct VoipMsAccount* proto_data = gc->proto_data;
-   struct VoipMsSendImData* send_im_data;
+   struct VoipMsSendImData send_im_data = { 0 };
 
    purple_debug_info(
       "voipms",
@@ -615,7 +572,7 @@ static int voipms_send_im(
       );
       purple_conv_present_error( who, gc->account, msg );
       g_free( msg );
-      //retval = 0;
+      retval = 0;
       goto send_im_cleanup;
    }
 
@@ -645,27 +602,22 @@ static int voipms_send_im(
    );
 
    /* Build the attachment. */
-   send_im_data = calloc( 1, sizeof( struct VoipMsSendImData ) );
-   send_im_data->from_username = from_username;
-   send_im_data->to_username = who;
-   send_im_data->message = message;
-   send_im_data->receive_flags = receive_flags;
 
    voipms_api_request(
-      VOIPMS_METHOD_SENDSMS, api_args, gc->account, send_im_data
+      VOIPMS_METHOD_SENDSMS, api_args, gc->account, &send_im_data
    );
 
    /* Block until request completes. */
-   while( !send_im_data->processed ) {
+   while( !send_im_data.processed ) {
       voipms_api_request_progress( gc->account );
       /* TODO: Delay for a second or so. */
    }
 
    /* Return success or fail based on response. */
-   if( !send_im_data->success ) {
+   if( !send_im_data.success ) {
       msg = g_strdup_printf(
          "There was a problem contacting the VOIP.ms API: %s",
-         send_im_data->error_buffer
+         send_im_data.error_buffer
       );
       purple_debug_info(
          "voipms",
@@ -679,53 +631,17 @@ static int voipms_send_im(
 
    to = get_voipms_gc( who );
    if( to ) {
-      serv_got_im(
-         to,
-         from_username,
-         message,
-         receive_flags,
-         time( NULL )
-      );
+      serv_got_im( to, from_username, message, receive_flags, time( NULL ) );
    }
-
-   #if 0
-   /* Return success or fail based on the API call success. */
-   root = json_parser_get_root( parser );
-   response = json_node_get_object( root );
-   status = json_object_get_string_member( response, "status" );
-   if( strcmp( status, "success" ) ) {
-      msg = g_strdup_printf(
-         "There was a problem sending the message: %s", status
-      );
-      purple_debug_error( "voipms", "Request status: %s", status );
-      purple_conv_present_error( who, gc->account, msg );
-      g_free( msg );
-      retval = 0;
-      goto send_im_cleanup;
-   }
-
-   #endif
 
 send_im_cleanup:
    
-   #if 0
-   g_object_unref( parser );
-   #endif
-
    if( NULL != api_message ) {
       g_free( api_message );
    }
 
-   if( NULL != send_im_data ) {
-      #if 0
-      g_free( send_im_data->from_username );
-      g_free( send_im_data->to_username );
-      g_free( send_im_data->message );
-      #endif
-      if( NULL != send_im_data->error_buffer ) {
-         g_free( send_im_data->error_buffer );
-      }
-      free( send_im_data );
+   if( NULL != send_im_data.error_buffer ) {
+      g_free( send_im_data.error_buffer );
    }
 
    return retval;
@@ -895,18 +811,8 @@ static PurplePluginInfo info = {
 };
 
 static void voipms_init( PurplePlugin* plugin ) {
-   //PurpleAccountUserSplit* split;
    PurpleAccountOption* option;
    
-   #if 0
-   /* See accountopt.h for information about user splits and protocol options.
-    */
-   split = purple_account_user_split_new(
-      "Example user split",  /* text shown to user */
-      "default",                /* default value */
-      '@');                     /* field separator */
-   #endif
-
    option = purple_account_option_string_new(
       "REST GET API URL",
       "api_url",                
@@ -932,8 +838,6 @@ static void voipms_init( PurplePlugin* plugin ) {
       g_list_append( prpl_info.protocol_options, option );
  
    purple_debug_info( "voipms", "Starting up...\n" );
-
-   //prpl_info.user_splits = g_list_append(NULL, split);
 
    _voipms_protocol = plugin;
 }
