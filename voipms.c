@@ -21,6 +21,10 @@ static void voipms_destroy( PurplePlugin* );
 
 static PurplePlugin* _voipms_protocol = NULL;
 
+static void messages_foreach_process( JsonArray*, guint, JsonNode*, gpointer );
+static void messages_foreach_serve( gpointer, gpointer );
+static void messages_foreach_free( gpointer );
+
 /* Requests */
 
 static size_t voipms_api_request_write_body_callback(
@@ -60,8 +64,8 @@ static void voipms_api_request(
    request_data = calloc( 1, sizeof( struct VoipMsRequestData ) );
    request_data->method = method;
    request_data->error_buffer = calloc( CURL_ERROR_SIZE, sizeof( char ) );
-   (*request_data).chunk.memory = calloc( 1, sizeof( char ) );
-   (*request_data).chunk.size = 0;
+   request_data->chunk.memory = calloc( 1, sizeof( char ) );
+   request_data->chunk.size = 0;
 
    /* Add the credentials to the request. */
    args = g_slist_append( args, g_strdup_printf( "api_username=%s",
@@ -124,7 +128,7 @@ static void voipms_api_request(
       curl, CURLOPT_WRITEFUNCTION, voipms_api_request_write_body_callback
    );
    curl_easy_setopt( curl, CURLOPT_PRIVATE, request_data );
-   curl_easy_setopt( curl, CURLOPT_WRITEDATA, &((*request_data).chunk) );
+   curl_easy_setopt( curl, CURLOPT_WRITEDATA, &(request_data->chunk) );
    curl_easy_setopt( curl, CURLOPT_ERRORBUFFER, request_data->error_buffer );
    curl_easy_setopt( curl, CURLOPT_FAILONERROR, 1 );
 
@@ -146,14 +150,6 @@ static void voipms_api_request(
    #endif
 
    #if 0
-   parser = json_parser_new();
-   if( !json_parser_load_from_data( parser, chunk.memory, chunk.size, NULL ) ) {
-      purple_debug_error(
-         "voipms", "Error parsing response: %s\n", chunk.memory
-      );
-      g_object_unref( parser );
-      parser = NULL;
-   }
 
 api_request_cleanup:
 
@@ -176,6 +172,12 @@ static void voipms_api_request_progress( PurpleAccount* account ) {
       queue_count;
    struct CURLMsg* msg;
    struct VoipMsRequestData* request_data = NULL;
+   JsonParser* parser = NULL;
+   JsonNode* root = NULL;
+   JsonObject* response = NULL;
+   JsonArray* messages = NULL;
+   const gchar* status;
+   struct GcFuncDataMessageList message_list = { NULL, account };
 
    curl_multi_perform( proto_data->multi_handle, &(proto_data->still_running) );
 
@@ -205,13 +207,51 @@ static void voipms_api_request_progress( PurpleAccount* account ) {
       goto api_request_progress_cleanup;
    }
 
+   #if 0
    purple_debug_info(
       "voipms", "Response from server: %s\n", (*request_data).chunk.memory
    );
+   #endif
+
+   if( VOIPMS_METHOD_GETSMS == request_data->method ) {
+      proto_data->get_request_in_progress = FALSE;
+   }
+
+   /* Parse the JSON response. */
+   parser = json_parser_new();
+   if( !json_parser_load_from_data(
+      parser,
+      request_data->chunk.memory,
+      request_data->chunk.size,
+      NULL
+   ) ) {
+      purple_debug_error(
+         "voipms",
+         "Error parsing response: %s\n",
+         request_data->chunk.memory
+      );
+      goto api_request_progress_cleanup;
+   }
+   root = json_parser_get_root( parser );
+   response = json_node_get_object( root );
+
+   /* Get the status of the request. */
+   status = json_object_get_string_member( response, "status" );
+   if( strcmp( status, "success" ) ) {
+      purple_debug_error( "voipms", "Request status: %s\n", status );
+      goto api_request_progress_cleanup;
+   }
 
    switch( request_data->method ) {
       case VOIPMS_METHOD_GETSMS:
-         proto_data->get_request_in_progress = FALSE;
+         /* Parse the messages and reverse them so that newest come last      *
+          * before we serve them.                                             */
+         messages = json_object_get_array_member( response, "sms" );  
+         json_array_foreach_element(
+            messages, messages_foreach_process, &message_list
+         );
+         message_list.messages = g_list_reverse( message_list.messages );
+         g_list_foreach( message_list.messages, messages_foreach_serve, NULL );
          break;
    }
 
@@ -220,6 +260,12 @@ static void voipms_api_request_progress( PurpleAccount* account ) {
    curl_easy_cleanup( msg->easy_handle );
 
 api_request_progress_cleanup:
+
+   if( NULL != parser ) {
+      g_object_unref( parser );
+   }
+
+   g_list_free_full( message_list.messages, messages_foreach_free );
 
    return;
 }
@@ -312,13 +358,7 @@ static void messages_foreach_free( gpointer data ) {
 
 static void messages_foreach_serve( gpointer data, gpointer user_data ) {
    struct VoipMsMessage* message = (struct VoipMsMessage*)data;
-   char curl_error_str[VOIPMS_ERROR_SIZE];
    GSList* api_args = NULL;
-   JsonParser* parser = NULL;
-   JsonNode* root = NULL;
-   JsonObject* response = NULL;
-   JsonArray* messages = NULL;
-   const gchar* status;
    
    /* Pass the message on to the user. */
    serv_got_im(
@@ -401,12 +441,10 @@ static gboolean voipms_messages_timer( PurpleAccount* acct ) {
       from_filter_date[VOIPMS_DATE_BUFFER_SIZE] = { 0 },
       to_filter_date[VOIPMS_DATE_BUFFER_SIZE] = { 0 };
    GSList* api_args = NULL;
-   JsonParser* parser = NULL;
    JsonNode* root = NULL;
    JsonObject* response = NULL;
    JsonArray* messages = NULL;
    const gchar* status;
-   struct GcFuncDataMessageList message_list = { NULL, acct };
    struct VoipMsAccount* proto_data = acct->gc->proto_data;
 
    /* Calculate as wide a range as the API will allow us. */
@@ -453,31 +491,13 @@ static gboolean voipms_messages_timer( PurpleAccount* acct ) {
       goto messages_timer_cleanup;
    }
 
-   root = json_parser_get_root( parser );
-   response = json_node_get_object( root );
-   status = json_object_get_string_member( response, "status" );
-   if( strcmp( status, "success" ) && strcmp( status, "no_sms" ) ) {
-      purple_debug_error( "voipms", "Request status: %s\n", status );
-      goto messages_timer_cleanup;
-   }
-      
-   /* Parse the messages and reverse them so that newest come last before we  *
-    * serve them.                                                             */
-   messages = json_object_get_array_member( response, "sms" );  
-   json_array_foreach_element(
-      messages, messages_foreach_process, &message_list
-   );
-   message_list.messages = g_list_reverse( message_list.messages );
-   g_list_foreach( message_list.messages, messages_foreach_serve, NULL );
    #endif
 
 messages_timer_cleanup:
 
    #if 0
-   g_object_unref( parser );
    g_slist_free_full( api_args, g_free );
    #endif
-   g_list_free_full( message_list.messages, messages_foreach_free );
 
    #if 0
    free( timeinfo );
