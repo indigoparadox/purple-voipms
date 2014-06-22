@@ -66,6 +66,12 @@
 #define VOIPMS_MAX_AGE_DAYS 91
 #define VOIPMS_DAY_SECONDS (60 * 60 * 24)
 
+typedef enum {
+   VOIPMS_METHOD_SENDSMS,
+   VOIPMS_METHOD_GETSMS,
+   VOIPMS_METHOD_DELETESMS
+} VOIPMS_METHOD;
+
 typedef void (*GcFunc)(
    PurpleConnection *from,
    PurpleConnection *to,
@@ -80,6 +86,7 @@ struct RequestMemoryStruct {
 struct VoipMsAccount {
    guint timer; 
    CURLM* multi_handle;
+   int still_running;
 };
 
 struct VoipMsMessage {
@@ -88,6 +95,12 @@ struct VoipMsMessage {
    gchar* message;
    struct tm timeinfo;
    PurpleAccount* account;
+};
+
+struct VoipMsRequestData {
+   VOIPMS_METHOD method;
+   char* error_buffer;
+   struct RequestMemoryStruct chunk;
 };
 
 struct GcFuncData {
