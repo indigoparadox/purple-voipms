@@ -1,7 +1,7 @@
 
-This is kind of a rough attempt at a simple SMS send/receive protocol plugin
-for Pidgin. It requires a phone number with SMS service through VOIP.ms. You
-can find more information at: http://wiki.voip.ms/article/SMS
+This is a COMPLETELY UNOFFICIAL rough attempt at a simple SMS send/receive
+protocol plugin for Pidgin. It requires a phone number with SMS service through
+VOIP.ms. You can find more information at: http://wiki.voip.ms/article/SMS
 
 = Notes =
 
@@ -9,8 +9,11 @@ can find more information at: http://wiki.voip.ms/article/SMS
   messages for on the "Advanced" tab when you create an account.
 
 * When you add a buddy, use their 10-digit phone number with no spaces/dashed
-  as their screen name. You will also need to show offline buddies to see the
-  buddy you've added, but you can then right-click on their screen name and
-  choose "Show When Offline" to show them even when hiding other offline
-  buddies.
+  as their screen name.
+
+= Licensing, etc =
+
+* Icon by antialiasfactory (http://antialiasfactory.deviantart.com/).
+
+* Software distributed under the GPL v3 (see COPYING).
 
