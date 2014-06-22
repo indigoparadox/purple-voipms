@@ -294,6 +294,16 @@ api_request_progress_cleanup:
 
 /* Helpers */
 
+static gchar* str_replace( gchar* string, const gchar* from, const gchar* to ) {
+   gchar* new_string;
+
+   //while( NULL != strstr( string, from ) ) {
+      new_string = g_strjoinv( to, g_strsplit( string, from, -1 ) );
+   //}
+
+   return new_string;
+}
+
 static PurpleConnection* get_voipms_gc( const char* username ) {
    PurpleAccount* acct = purple_accounts_find( username, VOIPMS_PLUGIN_ID );
    if( acct && purple_account_is_connected( acct ) ) {
@@ -543,8 +553,16 @@ static int voipms_send_im(
 
    /* Strip the whitespace from the ends of the string. Useful in case we     *
     * have something like OTR installed.                                      */
-   api_message = g_strdup( message );
+   /* TODO: Encode ~ for URL, somehow. */
+   api_message = g_strdup( purple_url_encode( message ) );
+   api_message = str_replace( api_message, "~", "-" );
    g_strstrip( api_message );
+
+   purple_debug_info(
+      "voipms",
+      "Encoded message: %s\n",
+      api_message
+   );
 
    /* Build and send the API request. */
    api_args = g_slist_append(
@@ -562,7 +580,7 @@ static int voipms_send_im(
    api_args = g_slist_append(
       api_args,
       g_strdup_printf(
-         "message=%s", purple_url_encode( api_message )
+         "message=%s", api_message
       )
    );
 
@@ -596,6 +614,7 @@ static int voipms_send_im(
 
    to = get_voipms_gc( who );
    if( to ) {
+      /* TODO: Fix timezone? */
       serv_got_im( to, from_username, message, receive_flags, time( NULL ) );
    }
 
