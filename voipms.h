@@ -29,6 +29,8 @@
 #  define PURPLE_PLUGINS
 #endif
 
+#define _GNU_SOURCE
+
 #include <stdarg.h>
 #include <string.h>
 #include <time.h>
@@ -54,7 +56,7 @@
 #endif
 
 #define VOIPMS_PLUGIN_ID "prpl-indigoparadox-voipms"
-#define VOIPMS_PLUGIN_VERSION "14.6"
+#define VOIPMS_PLUGIN_VERSION "14.6.1"
 #define VOIPMS_PLUGIN_WEBSITE ""
 #define VOIPMS_PLUGIN_NAME "VOIP.ms SMS Protocol"
 #define VOIPMS_PLUGIN_DEFAULT_API_URL "https://voip.ms/api/v1/rest.php"
@@ -107,10 +109,6 @@ struct VoipMsRequestData {
 };
 
 struct VoipMsSendImData {
-   const char* from_username;
-   const char* to_username;
-   const char* message;
-   PurpleMessageFlags receive_flags;
    gboolean processed;
    gboolean success; /* TRUE for send success, set by request monitor. */
    gchar* error_buffer;
