@@ -178,23 +178,18 @@ static void voipms_api_request_progress( PurpleAccount* account ) {
       msg->easy_handle, CURLINFO_PRIVATE, (char*)(&request_data)
    );
 
+   /* A valid request has finished, at any rate. */
+   proto_data->requests_in_progress--;
+
    if( NULL == request_data ) {
       /* Don't know how to handle this. */
       purple_debug_info(
          "voipms", "NULL request_data returned for request.\n"
       );
-      goto api_request_progress_cleanup;
+      goto api_request_progress_curl_cleanup;
    }
 
-   #if 0
-   purple_debug_info(
-      "voipms", "Response from server: %s\n", (*request_data).chunk.memory
-   );
-   #endif
-
-   /* A valid request has finished, at any rate. */
-   proto_data->requests_in_progress--;
-
+   /* Prepare the kind of attachment we'll be using. */
    switch( request_data->method ) {
       case VOIPMS_METHOD_SENDSMS:
          send_im_data = (struct VoipMsSendImData*)(request_data->attachment);
@@ -218,9 +213,25 @@ static void voipms_api_request_progress( PurpleAccount* account ) {
          "Error parsing response: %s\n",
          request_data->chunk.memory
       );
-      goto api_request_progress_cleanup;
+      goto api_request_progress_curl_cleanup;
    }
    root = json_parser_get_root( parser );
+
+   /* TODO: Make sure the response was successful. */
+   if( NULL == root ) {
+      if( NULL != send_im_data ) {
+         send_im_data->error_buffer = g_strdup_printf(
+            "Error parsing response: %s\n", request_data->chunk.memory
+         );
+      }
+      purple_debug_error(
+         "voipms",
+         "Error parsing response: %s\n",
+         request_data->chunk.memory
+      );
+      goto api_request_progress_curl_cleanup;
+   }
+
    response = json_node_get_object( root );
 
    /* Get the status of the request. */
@@ -230,7 +241,7 @@ static void voipms_api_request_progress( PurpleAccount* account ) {
       if( NULL != send_im_data ) {
          send_im_data->error_buffer = g_strdup( request_data->error_buffer );
       }
-      goto api_request_progress_cleanup;
+      goto api_request_progress_curl_cleanup;
    }
 
    switch( request_data->method ) {
@@ -253,6 +264,8 @@ static void voipms_api_request_progress( PurpleAccount* account ) {
       default:
          break;
    }
+
+api_request_progress_curl_cleanup:
 
    /* Cleanup the handle we were just working with. */
    curl_multi_remove_handle( proto_data->multi_handle, msg->easy_handle );
@@ -619,9 +632,9 @@ static int voipms_send_im(
          "There was a problem contacting the VOIP.ms API: %s",
          send_im_data.error_buffer
       );
-      purple_debug_info(
+      purple_debug_error(
          "voipms",
-         "Discarding; there was a problem contacting the VOIP.ms API."
+         "Discarding; there was a problem contacting the VOIP.ms API.\n"
       );
       purple_conv_present_error( who, gc->account, msg );
       g_free( msg );
