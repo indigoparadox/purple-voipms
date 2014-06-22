@@ -29,6 +29,8 @@
 #  define PURPLE_PLUGINS
 #endif
 
+#define _GNU_SOURCE
+
 #include <stdarg.h>
 #include <string.h>
 #include <time.h>
@@ -54,7 +56,7 @@
 #endif
 
 #define VOIPMS_PLUGIN_ID "prpl-indigoparadox-voipms"
-#define VOIPMS_PLUGIN_VERSION "14.6"
+#define VOIPMS_PLUGIN_VERSION "14.6.1"
 #define VOIPMS_PLUGIN_WEBSITE ""
 #define VOIPMS_PLUGIN_NAME "VOIP.ms SMS Protocol"
 #define VOIPMS_PLUGIN_DEFAULT_API_URL "https://voip.ms/api/v1/rest.php"
@@ -65,6 +67,13 @@
 #define VOIPMS_DATE_BUFFER_SIZE 20
 #define VOIPMS_MAX_AGE_DAYS 91
 #define VOIPMS_DAY_SECONDS (60 * 60 * 24)
+#define VOIPMS_POLL_SECONDS 1
+
+typedef enum {
+   VOIPMS_METHOD_SENDSMS,
+   VOIPMS_METHOD_GETSMS,
+   VOIPMS_METHOD_DELETESMS
+} VOIPMS_METHOD;
 
 typedef void (*GcFunc)(
    PurpleConnection *from,
@@ -78,7 +87,10 @@ struct RequestMemoryStruct {
 };
 
 struct VoipMsAccount {
-   guint timer;
+   guint timer; 
+   CURLM* multi_handle;
+   int still_running;
+   gboolean requests_in_progress;
 };
 
 struct VoipMsMessage {
@@ -87,6 +99,19 @@ struct VoipMsMessage {
    gchar* message;
    struct tm timeinfo;
    PurpleAccount* account;
+};
+
+struct VoipMsRequestData {
+   VOIPMS_METHOD method;
+   char* error_buffer;
+   struct RequestMemoryStruct chunk;
+   void* attachment;
+};
+
+struct VoipMsSendImData {
+   gboolean processed;
+   gboolean success; /* TRUE for send success, set by request monitor. */
+   gchar* error_buffer;
 };
 
 struct GcFuncData {
