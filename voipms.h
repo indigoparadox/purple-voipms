@@ -61,7 +61,8 @@
 #define VOIPMS_PLUGIN_NAME "VOIP.ms SMS Protocol"
 #define VOIPMS_PLUGIN_DEFAULT_API_URL "https://voip.ms/api/v1/rest.php"
 
-#define VOIPMS_STATUS_ONLINE   "available"
+#define VOIPMS_STATUS_ONLINE "available"
+#define VOIPMS_STATUS_AWAY "away"
 
 #define VOIPMS_ERROR_SIZE CURL_ERROR_SIZE + 255
 #define VOIPMS_DATE_BUFFER_SIZE 20

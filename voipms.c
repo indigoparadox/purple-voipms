@@ -444,6 +444,12 @@ static gboolean voipms_messages_timer( PurpleAccount* acct ) {
 
 static void voipms_refresh_buddies( PurpleAccount* acct ) {
    PurpleBlistNode* blist_node;
+   const char* default_status;
+
+   /* Allow selecting between "online" and "away" status by default. */
+   default_status = purple_account_get_string(
+      acct, "default_status", VOIPMS_STATUS_ONLINE
+   );
 
    /* Just set everyone online all the time. */
    for(
@@ -458,7 +464,7 @@ static void voipms_refresh_buddies( PurpleAccount* acct ) {
       purple_prpl_got_user_status(
          acct,
          PURPLE_BLIST_NODE_NAME( blist_node ),
-         VOIPMS_STATUS_ONLINE,
+         default_status,
          NULL
       );
    }
@@ -676,6 +682,14 @@ static GList* voipms_status_types( PurpleAccount* acct ) {
    );
    types = g_list_prepend( types, type );
 
+   type = purple_status_type_new_with_attrs(
+      PURPLE_STATUS_AWAY,
+      VOIPMS_STATUS_AWAY, NULL, TRUE, TRUE, FALSE,
+      "message", "Message", purple_value_new( PURPLE_TYPE_STRING ),
+      NULL
+   );
+   types = g_list_prepend( types, type );
+
    return g_list_reverse( types );
 }
 
@@ -799,6 +813,8 @@ static PurplePluginInfo info = {
 
 static void voipms_init( PurplePlugin* plugin ) {
    PurpleAccountOption* option;
+   GList* status_types = NULL;
+   PurpleKeyValuePair* status;
    
    option = purple_account_option_string_new(
       "REST GET API URL",
@@ -820,6 +836,25 @@ static void voipms_init( PurplePlugin* plugin ) {
       "Delete Messages on Fetch",
       "delete",
       TRUE
+   );
+   prpl_info.protocol_options =
+      g_list_append( prpl_info.protocol_options, option );
+
+   /* Setup the statuses to choose from. */
+   status = calloc( 1, sizeof( PurpleKeyValuePair ) );
+   status->key = "Online";
+   status->value = VOIPMS_STATUS_ONLINE;
+   status_types = g_list_append( status_types, status );
+
+   status = calloc( 1, sizeof( PurpleKeyValuePair ) );
+   status->key = "Away";
+   status->value = VOIPMS_STATUS_AWAY;
+   status_types = g_list_append( status_types, status );
+
+   option = purple_account_option_list_new(
+      "Default Contact Status",
+      "default_status",
+      status_types
    );
    prpl_info.protocol_options =
       g_list_append( prpl_info.protocol_options, option );
