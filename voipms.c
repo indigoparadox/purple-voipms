@@ -329,6 +329,14 @@ static void messages_foreach_serve( gpointer data, gpointer user_data ) {
    struct VoipMsMessage* message = (struct VoipMsMessage*)data;
    GSList* api_args = NULL;
    struct VoipMsAccount* proto_data = message->account->gc->proto_data;
+   time_t message_time,
+      hours_offset;
+
+   hours_offset = purple_account_get_int( message->account, "hours_offset", 0 );
+
+   /* Convert hours_offset from hours (stored) to seconds (for adding). */
+   hours_offset = hours_offset * 60 * 60;
+   message_time = mktime( &(message->timeinfo) ) + hours_offset;
    
    /* Pass the message on to the user. */
    serv_got_im(
@@ -336,7 +344,7 @@ static void messages_foreach_serve( gpointer data, gpointer user_data ) {
       message->contact,
       message->message,
       PURPLE_MESSAGE_RECV,
-      mktime( &(message->timeinfo) )
+      message_time
    );
 
    /* Delete the message from the server. */
@@ -855,6 +863,14 @@ static void voipms_init( PurplePlugin* plugin ) {
       "Default Contact Status",
       "default_status",
       status_types
+   );
+   prpl_info.protocol_options =
+      g_list_append( prpl_info.protocol_options, option );
+
+   option = purple_account_option_int_new(
+      "Incoming Hours Offset",
+      "hours_offset",
+      0
    );
    prpl_info.protocol_options =
       g_list_append( prpl_info.protocol_options, option );
